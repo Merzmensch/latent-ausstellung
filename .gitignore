@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Models — distribute separately
+models/
+*.pkl
+
+# StyleGAN2 submodule build artifacts
+stylegan2-ada-pytorch/dnnlib/__pycache__/
+stylegan2-ada-pytorch/**/__pycache__/
+
+# Conda / virtual envs
+env/
+venv/
+
+# Output / project files
+projects/
+outputs/
+*.mp4
+*.wav
+
+# OS
+.DS_Store
+Thumbs.db

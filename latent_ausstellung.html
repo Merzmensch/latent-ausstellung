@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Latent Ausstellung</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #080810;
+    --surface: #10101a;
+    --panel:   #14141e;
+    --border:  #222230;
+    --accent:  #00ffaa;
+    --accent2: #ff4466;
+    --accent3: #7766ff;
+    --text:    #ddddee;
+    --muted:   #444458;
+    --cell:    96px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    height: 100vh;
+    display: grid;
+    grid-template-rows: 44px 1fr;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 18px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: .1em; }
+  .logo span { color: var(--accent); }
+  .hrow { display: flex; align-items: center; gap: 14px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+  .dot.live  { background: var(--accent);  box-shadow: 0 0 8px var(--accent); }
+  .dot.error { background: var(--accent2); }
+  #stxt { font-size: 10px; color: var(--muted); }
+  .nav-links { display: flex; gap: 14px; font-size: 10px; }
+  .nav-links a { color: var(--muted); text-decoration: none; }
+  .nav-links a:hover { color: var(--text); }
+
+  /* ── Main layout ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    overflow: hidden;
+  }
+
+  /* ── Canvas ── */
+  .map-wrap {
+    position: relative;
+    overflow: hidden;
+    background: var(--bg);
+    cursor: grab;
+  }
+  .map-wrap.dragging { cursor: grabbing; }
+
+  /* Infinite grid canvas */
+  #map-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    /* tiles positioned absolutely inside */
+  }
+
+  /* Individual tile */
+  .tile {
+    position: absolute;
+    width: var(--cell);
+    height: var(--cell);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    transition: border-color .15s;
+    background: var(--surface);
+  }
+  .tile img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+    opacity: 0;
+    transition: opacity .3s;
+  }
+  .tile img.loaded { opacity: 1; }
+  .tile.loading::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(0,255,170,.05), transparent);
+    animation: shimmer 1.2s infinite;
+  }
+  @keyframes shimmer { from{transform:translateX(-100%)} to{transform:translateX(100%)} }
+  .tile:hover { border-color: var(--accent); z-index: 2; }
+  .tile.selected { border-color: var(--accent); border-width: 2px; z-index: 3; }
+
+  /* Coord label overlay */
+  .tile .coord {
+    position: absolute;
+    bottom: 2px; right: 3px;
+    font-size: 8px;
+    color: rgba(255,255,255,.25);
+    pointer-events: none;
+  }
+
+  /* Crosshair center marker */
+  .center-mark {
+    position: absolute;
+    pointer-events: none;
+    z-index: 10;
+    transform: translate(-50%, -50%);
+  }
+  .center-mark::before, .center-mark::after {
+    content: '';
+    position: absolute;
+    background: rgba(0,255,170,.4);
+  }
+  .center-mark::before { width: 1px; height: 20px; left: 0; top: -10px; }
+  .center-mark::after  { width: 20px; height: 1px; top: 0; left: -10px; }
+
+  /* ── Right panel ── */
+  .side-panel {
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .side-panel::-webkit-scrollbar { width: 3px; }
+  .side-panel::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .section { padding: 14px 14px; border-bottom: 1px solid var(--border); }
+  .slabel { font-size: 9px; letter-spacing: .15em; color: var(--muted); text-transform: uppercase; margin-bottom: 10px; }
+
+  /* Preview */
+  .preview-wrap {
+    flex-shrink: 0;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  #preview {
+    width: 100%; aspect-ratio: 1;
+    object-fit: cover; display: block;
+  }
+  .preview-ph {
+    width: 100%; aspect-ratio: 1;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 10px; text-align: center;
+    line-height: 1.6; padding: 16px;
+  }
+  .preview-coords {
+    position: absolute; bottom: 6px; left: 6px;
+    font-size: 9px; color: rgba(255,255,255,.4);
+    background: rgba(0,0,0,.6); padding: 2px 6px; border-radius: 3px;
+  }
+
+  /* Sliders */
+  .slider-wrap { margin-bottom: 10px; }
+  .slider-wrap:last-child { margin-bottom: 0; }
+  .slider-head { display: flex; justify-content: space-between; margin-bottom: 5px; }
+  .slider-head label { font-size: 11px; }
+  .slider-head .v { font-size: 11px; color: var(--accent); min-width: 36px; text-align: right; }
+  input[type=range] {
+    -webkit-appearance: none; width: 100%; height: 2px;
+    background: var(--border); border-radius: 2px; outline: none; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 13px; height: 13px;
+    border-radius: 50%; background: var(--accent);
+    border: 2px solid var(--bg); transition: transform .1s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.3); }
+
+  /* Buttons */
+  .btn {
+    cursor: pointer; border: none; border-radius: 4px;
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    padding: 7px 12px; transition: all .15s; white-space: nowrap;
+  }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+  .primary   { background: var(--accent); color: #000; font-weight: 500; }
+  .primary:not(:disabled):hover { filter: brightness(1.2); }
+  .ghost     { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .ghost:not(:disabled):hover { color: var(--text); border-color: var(--accent); }
+  .active-mode { color: var(--accent) !important; border-color: var(--accent) !important; }
+  .sm  { padding: 5px 10px; font-size: 10px; }
+  .full { width: 100%; }
+  .row { display: flex; gap: 6px; }
+
+  /* Position display */
+  .pos-display {
+    font-size: 10px; color: var(--muted);
+    line-height: 1.8; margin-bottom: 8px;
+  }
+  .pos-display span { color: var(--accent3); }
+
+  /* Hint */
+  .hint { font-size: 10px; color: var(--muted); line-height: 1.6; margin-top: 6px; }
+
+  /* ── Autopilot overlay ── */
+  #autopilot-badge {
+    position: fixed;
+    top: 52px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.75);
+    border: 1px solid var(--accent3);
+    border-radius: 20px;
+    padding: 5px 16px;
+    font-size: 10px;
+    color: var(--accent3);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    display: none;
+    z-index: 50;
+    pointer-events: none;
+    animation: apulse 2s ease-in-out infinite;
+  }
+  #autopilot-badge.active { display: block; }
+  @keyframes apulse {
+    0%, 100% { opacity: .7; }
+    50%       { opacity: 1; box-shadow: 0 0 12px var(--accent3); }
+  }
+
+  /* Countdown ring in corner */
+  #autopilot-countdown {
+    position: fixed;
+    bottom: 60px; right: 18px;
+    width: 36px; height: 36px;
+    display: none;
+    z-index: 50;
+    pointer-events: none;
+  }
+  #autopilot-countdown.visible { display: block; }
+  #ap-ring-bg  { stroke: var(--border); }
+  #ap-ring-fg  { stroke: var(--accent3); stroke-linecap: round;
+                 transition: stroke-dashoffset .5s linear;
+                 transform-origin: center; transform: rotate(-90deg); }
+  #ap-num {
+    font-size: 10px; fill: var(--accent3); text-anchor: middle; dominant-baseline: central;
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* Toast */
+  #toast {
+    position: fixed; bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(16px);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 4px; padding: 7px 16px;
+    font-size: 11px; color: var(--text);
+    opacity: 0; transition: all .25s; z-index: 100; pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Latent <span>Ausstellung</span> by Claude and Merzmensch</div>
+  <div class="hrow">
+    <div class="dot" id="dot"></div>
+    <span id="stxt">connecting…</span>
+  </div>
+  <div class="nav-links">
+    <a href="/">⌂ Home</a>
+    <a href="/browser">→ Browser</a>
+    <a href="/ui">→ Walk Explorer</a>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- MAP CANVAS -->
+  <div class="map-wrap" id="map-wrap">
+    <div id="map-canvas"></div>
+    <div class="center-mark" id="center-mark"></div>
+  </div>
+
+  <!-- SIDE PANEL -->
+  <div class="side-panel">
+
+    <!-- Preview of clicked tile -->
+<div class="preview-wrap">
+  <div class="preview-ph" id="preview-ph">Click a tile<br>for full preview</div>
+  <img id="preview" style="display:none" alt="preview">
+  <div class="preview-coords" id="preview-coords" style="display:none"></div>
+  <div id="seed-display" style="position:absolute;bottom:32px;left:6px;font-size:9px;color:#00ffaa;background:rgba(0,0,0,0.7);padding:2px 8px;border-radius:3px;font-family:'DM Mono',monospace;"></div>
+  <button id="send-btn" onclick="sendToExplorer()" style="
+    display:none;
+    position:absolute;
+    top:8px; right:8px;
+    background:rgba(0,0,0,0.8);
+    border:1px solid #00ffaa;
+    border-radius:4px;
+    color:#00ffaa;
+    font-family:'DM Mono',monospace;
+    font-size:10px;
+    padding:4px 10px;
+    cursor:pointer;
+    transition:all .15s;
+  ">→ Walk Explorer</button>
+</div>
+
+    <div class="section">
+      <div class="slabel">Position</div>
+      <div class="pos-display">
+        x: <span id="px">0.00</span><br>
+        y: <span id="py">0.00</span><br>
+        zoom: <span id="pz">1.0×</span>
+      </div>
+      <div class="row">
+        <button class="btn ghost sm" style="flex:1" onclick="resetView()">⌂ Reset</button>
+        <button class="btn ghost sm" style="flex:1" onclick="randomJump()">⚄ Jump</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="slabel">Truncation ψ</div>
+      <div class="slider-wrap">
+        <div class="slider-head">
+          <label>ψ value</label>
+          <span class="v" id="tv">0.70</span>
+        </div>
+        <input type="range" id="trunc-slider" min="0" max="1.5" step="0.05" value="0.7"
+          oninput="document.getElementById('tv').textContent=parseFloat(this.value).toFixed(2)"
+          onchange="setTruncation(+this.value)">
+      </div>
+      <p class="hint">Low = similar/safe<br>High = diverse/extreme</p>
+    </div>
+
+    <div class="section">
+      <div class="slabel">Interpolation Mode</div>
+      <div style="display:flex; flex-direction:column; gap:5px; margin-bottom:8px;">
+        <button id="mode-hash"   class="btn ghost sm full mode-btn active-mode" onclick="setTileMode('hash')">
+          ◈ Hash — independent seeds
+        </button>
+        <button id="mode-slerp"  class="btn ghost sm full mode-btn" onclick="setTileMode('slerp')">
+          ⌁ Slerp — smooth from center
+        </button>
+        <button id="mode-bilinear" class="btn ghost sm full mode-btn" onclick="setTileMode('bilinear')">
+          ⊞ Bilinear — 4-corner anchors
+        </button>
+      </div>
+      <p class="hint" id="mode-hint">Each tile has its own independent seed.</p>
+    </div>
+
+    <div class="section">
+      <div class="slabel">Sampling Distance</div>
+      <div class="slider-wrap">
+        <div class="slider-head">
+          <label>Step size</label>
+          <span class="v" id="sv">1.00</span>
+        </div>
+        <input type="range" id="step-slider" min="0.1" max="5.0" step="0.1" value="1.0"
+          oninput="document.getElementById('sv').textContent=parseFloat(this.value).toFixed(2); cfg.stepSize=+this.value; clearCache(); redraw()">
+      </div>
+      <p class="hint">Distance between adjacent tiles in latent space.</p>
+    </div>
+
+    <div class="section">
+      <div class="slabel">Actions</div>
+      <button class="btn ghost sm full" onclick="sendToExplorer()" style="margin-bottom:6px">→ Send to Walk Explorer</button>
+      <button class="btn ghost sm full" onclick="savePreview()">↓ Save preview</button>
+    </div>
+
+    <div class="section">
+      <div class="slabel">Navigation</div>
+      <div id="trackball-status" style="
+        display:flex; align-items:center; gap:7px;
+        margin-bottom:10px; padding:7px 10px;
+        border-radius:4px; border: 1px solid var(--border);
+        background: var(--bg); font-size:10px;
+      ">
+        <div id="tb-dot" style="
+          width:8px; height:8px; border-radius:50%;
+          background:var(--muted); flex-shrink:0;
+          transition: background .2s, box-shadow .2s;
+        "></div>
+        <span id="tb-txt" style="color:var(--muted)">Klick → Trackball aktivieren</span>
+      </div>
+      <p class="hint">
+        <b style="color:var(--text)">Trackball</b> — Raum navigieren<br>
+        <b style="color:var(--text)">Esc</b> — Trackball deaktivieren<br>
+        <b style="color:var(--text)">F</b> — Richtung umkehren<br>
+        <b style="color:var(--text)">Scroll</b> — zoom<br>
+        <b style="color:var(--text)">R</b> — zufälliger Sprung<br>
+        <b style="color:var(--text)">0</b> — Ansicht reset<br>
+        <b style="color:var(--text)">E</b> — zum Walk Explorer<br>
+        <b style="color:var(--accent3)">P</b> — <span style="color:var(--accent3)">Autopilot ein/aus</span>
+      </p>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- Autopilot badge -->
+<div id="autopilot-badge">⬡ Autopilot — Latent Space Explorer</div>
+
+<!-- Countdown ring (shown in last 10s before activation) -->
+<svg id="autopilot-countdown" viewBox="0 0 36 36">
+  <circle id="ap-ring-bg" cx="18" cy="18" r="14" fill="none" stroke-width="2.5"/>
+  <circle id="ap-ring-fg" cx="18" cy="18" r="14" fill="none" stroke-width="2.5"
+    stroke-dasharray="88" stroke-dashoffset="0"/>
+  <text id="ap-num" x="18" y="18"></text>
+</svg>
+
+<footer>
+  <div>
+    StyleGAN2 Latent Explorer · running on <span id="model-name">localhost:5000</span><br>
+    <span style="color:var(--muted); font-size:9px; letter-spacing:.06em">
+      Created by <a href="https://claude.ai/" style="color:var(--accent2); text-decoration:none">Claude</a> &amp; 
+      <a href="https://merzmensch.com/" style="color:var(--accent); text-decoration:none">Merzmensch</a> 
+      for the worldwide GenAI creative community
+    </span>
+  </div>
+  <div class="footer-links">
+    <a href="/ui">Walk Explorer</a>
+    <a href="/browser">Latent Browser</a>
+    <a href="/infinite">Infinite Map</a>
+  </div>
+</footer>
+
+<script>
+const API = 'http://localhost:5000';
+
+const cfg = {
+  cellSize:   96,
+  stepSize:   1.0,
+  truncation: 0.7,
+  padding:    2,
+  centerZ:    null,
+  tileMode:   'hash',
+};
+
+let offsetX = 0, offsetY = 0;
+let dragging = false, dragStartX, dragStartY, dragOffX, dragOffY;
+let tileCache = {};
+let pendingTiles = new Set();
+let selectedTile = null;
+let selectedZ = null;
+let selectedSeed = null;
+let currentModel = '';
+let connected = false;
+let redrawTimer = null;
+let lastCenterKey = null;
+
+function updateSeedDisplay(seed) {
+  selectedSeed = seed;
+  const el = document.getElementById('seed-display');
+  if (el) el.textContent = seed !== null ? `seed: ${seed}` : '';
+}
+
+async function api(path, method='GET', body=null) {
+  try {
+    const r = await fetch(API + path, {
+      method, headers: {'Content-Type': 'application/json'},
+      body: body ? JSON.stringify(body) : null
+    });
+    return await r.json();
+  } catch(e) { return null; }
+}
+
+const MODE_HINTS = {
+  'hash':     'Each tile has its own independent seed.',
+  'slerp':    'Smooth interpolation from center outward. Step size controls transition speed.',
+  'bilinear': '4 random anchor corners, all tiles interpolated between them.',
+};
+
+function setTileMode(mode) {
+  cfg.tileMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active-mode'));
+  document.getElementById('mode-' + mode).classList.add('active-mode');
+  document.getElementById('mode-hint').textContent = MODE_HINTS[mode];
+  clearCache();
+  redraw();
+  toast('Mode: ' + mode);
+}
+
+async function init() {
+  const s = await api('/status');
+  if (s && s.status === 'ok') {
+    connected = true;
+    setStatus('live', `ready · z=${s.z_dim} · ${s.resolution}px`);
+    if (s.pkl) currentModel = s.pkl.split(/[\\/]/).pop().replace('.pkl', '');
+    const c = await api('/infinite/center');
+    if (c && c.center) {
+      cfg.centerZ = c.center;
+      clearCache();
+      toast('📌 Centered on pinned position from Latent Browser');
+      await api('/infinite/center/clear', 'POST');
+    } else {
+      // Kein Pin — frischen zufälligen z-Vektor als Zentrum holen
+      // → jede Session startet in einer anderen Region des latenten Raums
+      const rz = await api('/random_z');
+      if (rz && rz.z) cfg.centerZ = rz.z;
+    }
+    // Zufälliger Startpunkt bei jedem Seitenaufruf
+    const spread = 40;
+    offsetX = (Math.random() * 2 - 1) * spread * cfg.cellSize;
+    offsetY = (Math.random() * 2 - 1) * spread * cfg.cellSize;
+    redraw();
+  } else {
+    setStatus('error', 'server not reachable');
+  }
+}
+
+function setStatus(cls, msg) {
+  document.getElementById('dot').className = 'dot ' + cls;
+  document.getElementById('stxt').textContent = msg;
+}
+
+function cellToScreen(gx, gy) {
+  const wrap = document.getElementById('map-wrap');
+  return {
+    x: wrap.clientWidth  / 2 + offsetX + gx * cfg.cellSize,
+    y: wrap.clientHeight / 2 + offsetY + gy * cfg.cellSize,
+  };
+}
+
+function cellToLatent(gx, gy) {
+  return { lx: gx * cfg.stepSize, ly: gy * cfg.stepSize };
+}
+
+function tileKey(gx, gy) { return `${gx},${gy}`; }
+
+// ── Fetch queue — max 3 parallel requests, FIFO by distance ─────────────────
+const FETCH_CONCURRENCY = 3;
+let fetchQueue = [];       // [{gx, gy, dist}] sorted near→far
+let activeCount = 0;
+
+function enqueueTile(gx, gy, dist) {
+  const key = tileKey(gx, gy);
+  if (tileCache[key] || pendingTiles.has(key)) return;
+  // Avoid duplicates in queue
+  if (fetchQueue.some(t => t.gx === gx && t.gy === gy)) return;
+  pendingTiles.add(key);
+  fetchQueue.push({ gx, gy, dist });
+  fetchQueue.sort((a, b) => a.dist - b.dist);
+  drainQueue();
+}
+
+function drainQueue() {
+  while (activeCount < FETCH_CONCURRENCY && fetchQueue.length > 0) {
+    const { gx, gy } = fetchQueue.shift();
+    activeCount++;
+    doFetch(gx, gy).finally(() => { activeCount--; drainQueue(); });
+  }
+}
+
+async function doFetch(gx, gy) {
+  const key = tileKey(gx, gy);
+  const { lx, ly } = cellToLatent(gx, gy);
+  const r = await api('/infinite/tile', 'POST', {
+    lx, ly, truncation: cfg.truncation, center_z: cfg.centerZ, mode: cfg.tileMode, step_size: cfg.stepSize
+  });
+  pendingTiles.delete(key);
+  if (!r || r.error) return;
+  tileCache[key] = { b64: r.image, z: r.z };
+  const el = document.getElementById('tile-' + key.replace(',', '_'));
+  if (el) {
+    const img = el.querySelector('img');
+    img.src = 'data:image/jpeg;base64,' + r.image;
+    img.onload = () => { img.classList.add('loaded'); el.classList.remove('loading'); };
+  }
+  updateCenterPreview();
+}
+
+function fetchTile(gx, gy, dist = 999) {
+  enqueueTile(gx, gy, dist);
+}
+
+function getCenterTileKey() {
+  const centerGX = -Math.round(offsetX / cfg.cellSize);
+  const centerGY = -Math.round(offsetY / cfg.cellSize);
+  return { gx: centerGX, gy: centerGY, key: tileKey(centerGX, centerGY) };
+}
+
+function updateCenterPreview() {
+  const { gx, gy, key } = getCenterTileKey();
+  const cached = tileCache[key];
+  if (!cached) return;
+  // Nur updaten wenn sich das Zentrum-Tile geändert hat
+  if (key === lastCenterKey) return;
+  lastCenterKey = key;
+  selectedTile = key;
+  showPreview(cached.b64, cached.z, gx, gy);
+  // Tile visuell markieren
+  document.getElementById('map-canvas').querySelectorAll('.tile')
+    .forEach(el => el.classList.toggle('selected', el.dataset.key === key));
+}
+
+function repositionTiles() {
+  document.getElementById('map-canvas').querySelectorAll('.tile').forEach(el => {
+    const pos = cellToScreen(parseInt(el.dataset.gx), parseInt(el.dataset.gy));
+    el.style.left = pos.x + 'px';
+    el.style.top  = pos.y + 'px';
+  });
+}
+
+function redraw() {
+  const wrap   = document.getElementById('map-wrap');
+  const canvas = document.getElementById('map-canvas');
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+
+  const colsHalf = Math.ceil(W / 2 / cfg.cellSize) + cfg.padding;
+  const rowsHalf = Math.ceil(H / 2 / cfg.cellSize) + cfg.padding;
+  const centerGX = -Math.round(offsetX / cfg.cellSize);
+  const centerGY = -Math.round(offsetY / cfg.cellSize);
+
+  const needed = new Set();
+  for (let gx = centerGX - colsHalf; gx <= centerGX + colsHalf; gx++)
+    for (let gy = centerGY - rowsHalf; gy <= centerGY + rowsHalf; gy++)
+      needed.add(tileKey(gx, gy));
+
+  // Remove off-screen tiles
+  canvas.querySelectorAll('.tile').forEach(el => {
+    if (!needed.has(el.dataset.key)) el.remove();
+  });
+
+  // Clean far cache entries
+  Object.keys(tileCache).forEach(key => {
+    const [gx, gy] = key.split(',').map(Number);
+    if (Math.max(Math.abs(gx - centerGX), Math.abs(gy - centerGY)) > 20)
+      delete tileCache[key];
+  });
+
+  // Sort inside-out and process
+  Array.from(needed)
+    .map(key => {
+      const [gx, gy] = key.split(',').map(Number);
+      return { key, gx, gy, dist: Math.sqrt((gx-centerGX)**2 + (gy-centerGY)**2) };
+    })
+    .sort((a, b) => a.dist - b.dist)
+    .forEach(({ key, gx, gy }) => {
+      const pos = cellToScreen(gx, gy);
+      let el = document.getElementById('tile-' + key.replace(',', '_'));
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'tile';
+        el.id = 'tile-' + key.replace(',', '_');
+        el.dataset.key = key;
+        el.dataset.gx = gx;
+        el.dataset.gy = gy;
+        const img = document.createElement('img');
+        el.appendChild(img);
+        const coord = document.createElement('div');
+        coord.className = 'coord';
+        coord.textContent = `${gx},${gy}`;
+        el.appendChild(coord);
+        el.addEventListener('click', () => onTileClick(gx, gy, key));
+        canvas.appendChild(el);
+      }
+      const img = el.querySelector('img');
+      if (tileCache[key]) {
+        if (!img.classList.contains('loaded')) {
+          img.src = 'data:image/jpeg;base64,' + tileCache[key].b64;
+          img.onload = () => { img.classList.add('loaded'); el.classList.remove('loading'); };
+        }
+      } else if (!pendingTiles.has(key)) {
+        el.classList.add('loading');
+        fetchTile(gx, gy, Math.sqrt((gx-centerGX)**2 + (gy-centerGY)**2));
+      }
+      el.style.left   = pos.x + 'px';
+      el.style.top    = pos.y + 'px';
+      el.style.width  = cfg.cellSize + 'px';
+      el.style.height = cfg.cellSize + 'px';
+      el.classList.toggle('selected', key === selectedTile);
+    });
+
+  document.getElementById('center-mark').style.left = (W/2) + 'px';
+  document.getElementById('center-mark').style.top  = (H/2) + 'px';
+  document.getElementById('px').textContent = (-offsetX / cfg.cellSize * cfg.stepSize).toFixed(2);
+  document.getElementById('py').textContent = (-offsetY / cfg.cellSize * cfg.stepSize).toFixed(2);
+  updateCenterPreview();
+}
+
+function onTileClick(gx, gy, key) {
+  selectedTile = key;
+  redraw();
+  const cached = tileCache[key];
+  if (cached) showPreview(cached.b64, cached.z, gx, gy);
+}
+
+function showPreview(b64, z, gx, gy) {
+  selectedZ = z;
+  selectedSeed = Math.abs(gx * 1000 + gy * 7 + Math.round(offsetX) * 3) % 999999;
+  updateSeedDisplay(selectedSeed);
+  const img = document.getElementById('preview');
+  document.getElementById('preview-ph').style.display = 'none';
+  img.style.display = 'block';
+  img.src = 'data:image/jpeg;base64,' + b64;
+  document.getElementById('preview-coords').style.display = 'block';
+  document.getElementById('preview-coords').textContent = `${gx}, ${gy}`;
+  document.getElementById('send-btn').style.display = 'block';
+}
+
+const wrap = document.getElementById('map-wrap');
+
+// ── Trackball / Pointer Lock navigation ──────────────────────────────────────
+// Pointer Lock = Cursor verschwindet, movementX/Y läuft unbegrenzt.
+// Kein Rand-Problem. Aktiviert beim ersten Klick. T = Maus-Drag-Fallback.
+
+let trackballMode = true;
+let pointerLocked = false;
+let trackballFlip = 1;   // 1 = normal, -1 = reversed
+
+function setTrackballMode(on) {
+  trackballMode = on;
+  const dot = document.getElementById('tb-dot');
+  const txt = document.getElementById('tb-txt');
+  if (on) {
+    dot.style.background = 'var(--accent)';
+    dot.style.boxShadow  = '0 0 8px var(--accent)';
+    txt.style.color      = 'var(--accent)';
+    txt.textContent      = pointerLocked ? 'Trackball aktiv' : 'Klick → Trackball aktivieren';
+    wrap.style.cursor    = pointerLocked ? 'none' : 'crosshair';
+  } else {
+    if (pointerLocked) document.exitPointerLock();
+    dot.style.background = 'var(--muted)';
+    dot.style.boxShadow  = 'none';
+    txt.style.color      = 'var(--muted)';
+    txt.textContent      = 'Maus-Drag-Modus (T = zurück)';
+    wrap.style.cursor    = 'grab';
+  }
+}
+
+document.addEventListener('pointerlockchange', () => {
+  pointerLocked = (document.pointerLockElement === wrap);
+  const dot = document.getElementById('tb-dot');
+  const txt = document.getElementById('tb-txt');
+  if (pointerLocked) {
+    wrap.style.cursor    = 'none';
+    dot.style.background = 'var(--accent)';
+    dot.style.boxShadow  = '0 0 8px var(--accent)';
+    txt.style.color      = 'var(--accent)';
+    txt.textContent      = 'Trackball aktiv';
+    toast('🎱 Trackball aktiv — T = Maus-Modus');
+  } else {
+    wrap.style.cursor    = trackballMode ? 'crosshair' : 'grab';
+    dot.style.background = 'var(--muted)';
+    dot.style.boxShadow  = 'none';
+    txt.style.color      = 'var(--muted)';
+    txt.textContent      = trackballMode ? 'Klick → Trackball aktivieren' : 'Maus-Drag-Modus';
+    // Kein Toast — Lock wird bei Fokus-Verlust automatisch reaktiviert
+  }
+});
+
+document.addEventListener('pointerlockerror', () => {
+  toast('⚠ Pointer Lock fehlgeschlagen');
+});
+
+// Pointer Lock anfordern — zentrale Funktion
+function acquireLock() {
+  if (trackballMode && !pointerLocked) {
+    wrap.requestPointerLock();
+  }
+}
+
+// Klick auf wrap (normaler Fall) oder irgendwo im Dokument nach Fokus-Verlust
+wrap.addEventListener('click', e => {
+  if (e.target.closest('.tile')) return;
+  acquireLock();
+});
+
+// Fenster bekommt wieder Fokus (z.B. nach Alt-Tab oder Klick von außen)
+window.addEventListener('focus', () => {
+  // Kurze Verzögerung — Browser braucht den user-gesture-Kontext
+  setTimeout(acquireLock, 100);
+});
+
+// Auch direkter Klick irgendwo im document reaktiviert den Lock
+document.addEventListener('click', () => {
+  acquireLock();
+});
+
+// Stillstand-Timer: 5s nach letzter Bewegung → Tiles neu aufbauen
+let stillTimer = null;
+let apRedrawTimer = null;  // Autopilot: sanfterer Redraw-Rhythmus
+
+function onMovement() {
+  repositionTiles();
+
+  if (apActive) {
+    // Im Autopilot kein harter DOM-Reset — stattdessen gedrosselter Redraw alle 800ms
+    clearTimeout(apRedrawTimer);
+    apRedrawTimer = setTimeout(() => {
+      fetchQueue = [];
+      pendingTiles.clear();
+      lastCenterKey = null;
+      document.getElementById('map-canvas').innerHTML = '';
+      redraw();
+    }, 800);
+    return;
+  }
+
+  clearTimeout(stillTimer);
+  stillTimer = setTimeout(() => {
+    fetchQueue = [];
+    pendingTiles.clear();
+    lastCenterKey = null;
+    document.getElementById('map-canvas').innerHTML = '';
+    redraw();
+  }, 5000);
+}
+
+// Bewegung mit aktivem Pointer Lock → Karte verschieben
+document.addEventListener('mousemove', e => {
+  if (!pointerLocked || !trackballMode) return;
+  offsetX += e.movementX * trackballFlip;
+  offsetY += e.movementY * trackballFlip;
+  onMovement();
+});
+
+// Fallback: Maus-Drag wenn Trackball-Modus aus
+wrap.addEventListener('mousedown', e => {
+  if (trackballMode) return;
+  dragging = true;
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  dragOffX = offsetX;     dragOffY = offsetY;
+  wrap.classList.add('dragging');
+  e.preventDefault();
+});
+
+window.addEventListener('mousemove', e => {
+  if (trackballMode || !dragging) return;
+  offsetX = dragOffX + (e.clientX - dragStartX);
+  offsetY = dragOffY + (e.clientY - dragStartY);
+  onMovement();
+});
+
+window.addEventListener('mouseup', () => {
+  if (!dragging) return;
+  dragging = false;
+  wrap.classList.remove('dragging');
+  // Maus losgelassen = sofort redraw (kein 5s warten bei normalem Drag)
+  clearTimeout(stillTimer);
+  clearCache();
+  redraw();
+});
+
+wrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  cfg.cellSize = Math.max(48, Math.min(192, cfg.cellSize + (e.deltaY > 0 ? -8 : 8)));
+  document.getElementById('pz').textContent = (cfg.cellSize / 96).toFixed(1) + '×';
+  redraw();
+}, { passive: false });
+
+function resetView() {
+  offsetX = 0; offsetY = 0; cfg.cellSize = 96;
+  document.getElementById('pz').textContent = '1.0×';
+  redraw();
+}
+
+function randomJump() {
+  offsetX = (Math.random() * 200 - 100) * cfg.cellSize;
+  offsetY = (Math.random() * 200 - 100) * cfg.cellSize;
+  clearCache(); redraw();
+  toast('⚄ Jumped to new region');
+}
+
+function setTruncation(v) {
+  cfg.truncation = v;
+  clearCache(); redraw();
+  toast(`ψ = ${v.toFixed(2)} — regenerating tiles`);
+}
+
+function clearCache() {
+  tileCache = {};
+  pendingTiles.clear();
+  fetchQueue = [];
+  lastCenterKey = null;
+  document.getElementById('map-canvas').innerHTML = '';
+}
+
+async function sendToExplorer() {
+  if (!selectedZ) { toast('Click a tile first'); return; }
+  const r = await api('/grid/pin_probe', 'POST', { z: selectedZ });
+  if (r && r.status === 'ok') {
+    toast('✅ Sent to Walk Explorer');
+    setTimeout(() => window.open('/ui', '_blank'), 500);
+  }
+}
+
+function savePreview() {
+  const img = document.getElementById('preview');
+  if (!img.src || img.style.display === 'none') { toast('Click a tile first'); return; }
+  const a = document.createElement('a');
+  a.href = img.src;
+  a.download = `${currentModel || 'latent'}_${selectedSeed || Date.now()}.png`;
+  a.click();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R') randomJump();
+  if (e.key === '0') resetView();
+  if (e.key === 'e' || e.key === 'E') sendToExplorer();
+  if (e.key === 't' || e.key === 'T') { setTrackballMode(!trackballMode); toast(trackballMode ? '🎱 Trackball-Modus' : '🖱 Maus-Drag-Modus'); }
+  if (e.key === 'p' || e.key === 'P') { if (apActive) apStop(); else apStart(); toast(apActive ? '⬡ Autopilot aktiviert' : '⬡ Autopilot gestoppt'); }
+});
+
+let _tt;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(_tt); _tt = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+// ── AUTOPILOT — Präsentationsmodus ───────────────────────────────────────────
+// Aktiviert sich nach AUTOPILOT_IDLE ms ohne Nutzerinteraktion.
+// Bewegt die Karte mit langsam wechselndem Velocity-Vektor (organisch, kein Jump).
+// Jede Nutzerinteraktion deaktiviert den Modus sofort.
+
+const AUTOPILOT_IDLE      = 30_000;  // 30s Inaktivität → Start
+const AUTOPILOT_COUNTDOWN = 10;      // letzten 10s: Countdown-Ring zeigen
+const AUTOPILOT_SPEED     = 0.6;     // Pixel pro Frame — klein = flüssig wie Trackball
+const AUTOPILOT_TURN      = 0.004;   // Winkeländerung pro Frame — sehr sanft
+
+let apActive       = false;
+let apAngle        = Math.random() * Math.PI * 2;
+let apTargetAngle  = apAngle;        // Zielwinkel; Ist-Winkel interpoliert sanft dazu
+let apRafId        = null;
+let apIdleTimer    = null;
+let apCountdownInt = null;
+let apIdleStart    = 0;
+
+const apBadge      = document.getElementById('autopilot-badge');
+const apCountdown  = document.getElementById('autopilot-countdown');
+const apRingFg     = document.getElementById('ap-ring-fg');
+const apNum        = document.getElementById('ap-num');
+const RING_CIRC    = 88;            // 2π·r ≈ 88 für r=14
+
+// Eingabe-Events → Inaktivität zurücksetzen
+function apResetIdle() {
+  apIdleStart = Date.now();
+  clearTimeout(apIdleTimer);
+  clearInterval(apCountdownInt);
+  apCountdown.classList.remove('visible');
+  if (apActive) apStop();
+  apIdleTimer = setTimeout(apBeginCountdown, AUTOPILOT_IDLE - AUTOPILOT_COUNTDOWN * 1000);
+}
+
+function apBeginCountdown() {
+  apCountdown.classList.add('visible');
+  let remaining = AUTOPILOT_COUNTDOWN;
+  apNum.textContent = remaining;
+  apRingFg.style.strokeDashoffset = 0;
+
+  apCountdownInt = setInterval(() => {
+    remaining--;
+    apNum.textContent = remaining;
+    // Ring-Offset: 0 = voll, RING_CIRC = leer
+    apRingFg.style.strokeDashoffset = ((AUTOPILOT_COUNTDOWN - remaining) / AUTOPILOT_COUNTDOWN * RING_CIRC).toFixed(1);
+    if (remaining <= 0) {
+      clearInterval(apCountdownInt);
+      apCountdown.classList.remove('visible');
+      apStart();
+    }
+  }, 1000);
+}
+
+function apStart() {
+  apActive = true;
+  apAngle  = Math.random() * Math.PI * 2;
+  apBadge.classList.add('active');
+  toast('⬡ Autopilot aktiviert — bewege die Maus zum Übernehmen');
+  // Pointer Lock freigeben (sonst blockiert er echte Mausbewegungen nicht sichtbar)
+  if (pointerLocked) document.exitPointerLock();
+  apLoop();
+}
+
+function apStop() {
+  apActive = false;
+  apBadge.classList.remove('active');
+  if (apRafId) { cancelAnimationFrame(apRafId); apRafId = null; }
+  clearTimeout(apRedrawTimer);
+  // Sauberer Redraw damit kein leerer Canvas bleibt
+  redraw();
+  apIdleTimer = setTimeout(apBeginCountdown, AUTOPILOT_IDLE - AUTOPILOT_COUNTDOWN * 1000);
+}
+
+function apLoop() {
+  if (!apActive) return;
+
+  // Alle ~300 Frames (~5s) neuen Zielwinkel wählen — sanfte Kurve
+  if (Math.random() < 0.003) {
+    apTargetAngle += (Math.random() - 0.5) * Math.PI * 0.8;
+  }
+
+  // Ist-Winkel gleitet zum Ziel — nie abrupte Richtungswechsel
+  const diff = apTargetAngle - apAngle;
+  apAngle += diff * AUTOPILOT_TURN;
+
+  offsetX += Math.cos(apAngle) * AUTOPILOT_SPEED;
+  offsetY += Math.sin(apAngle) * AUTOPILOT_SPEED;
+  onMovement();
+
+  apRafId = requestAnimationFrame(apLoop);
+}
+
+// Interaktions-Events → Inaktivität zurücksetzen
+// KEIN mousedown/pointerdown — sonst stoppt Autopilot beim Tile-Klick
+['mousemove', 'wheel', 'keydown', 'touchstart'].forEach(evt => {
+  window.addEventListener(evt, apResetIdle, { passive: true });
+});
+
+// Initial starten
+apResetIdle();
+
+// ── END AUTOPILOT ─────────────────────────────────────────────────────────────
+
+window.addEventListener('resize', redraw);
+setTrackballMode(true);
+// Sync cfg from slider initial values on load
+cfg.stepSize   = +document.getElementById('step-slider').value;
+cfg.truncation = +document.getElementById('trunc-slider').value;
+document.getElementById('sv').textContent = cfg.stepSize.toFixed(2);
+document.getElementById('tv').textContent = cfg.truncation.toFixed(2);
+init();
+</script>
+</body>
+</html>
