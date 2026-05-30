@@ -1,19 +1,31 @@
 # Latent Ausstellung
 
-**An interactive installation for exploring the latent space of a StyleGAN2 neural network.**
+> ### 🧳 Bring your own checkpoint.
+> This installation is **model-agnostic** — it works with any StyleGAN2-ADA-PyTorch compatible `.pkl` file.  
+> The software is open. The vision is yours.
 
-The visitor navigates a seemingly infinite map of AI-generated images — each tile a unique point in the model's learned visual space. The map is explorable by mouse drag or trackball. After 30 seconds of inactivity, the installation enters **Autopilot mode** and drifts through latent space on its own.
+**An interactive exhibition installation for exploring the latent space of a StyleGAN2 neural network.**
 
-> **Model:** `mem.pkl` — a StyleGAN2 model trained on memory-related imagery.  
+The visitor navigates a seemingly infinite map of AI-generated images — each tile a unique point in the model's learned visual space. The map is explorable by mouse drag or trackball. After 30 seconds of inactivity, the installation enters **Autopilot mode** and drifts through latent space on its own — ideal for unmanned display.
+
+The installation was designed to be **portable across models and exhibitions**: swap the `.pkl` checkpoint and the entire visual world of the installation changes. A model trained on faces produces a portrait landscape. A model trained on architecture produces an infinite city. A model trained on your own dataset produces your own latent universe.
+
 > Developed by [Merzmensch](https://github.com/merzmensch) (Vladimir Alexeev) as part of the *Latent MERZpoet* project.
 
 ---
 
-## Demo
+## What You Need to Bring
 
-| Infinite tile map | Selected tile preview |
+| What | Details |
 |---|---|
-| Pan by dragging or trackball | Click any tile to see full preview |
+| **Your `.pkl` checkpoint** | Any StyleGAN2-ADA-PyTorch model, any resolution, any subject |
+| **A Windows PC with NVIDIA GPU** | See system requirements below |
+| **~30 minutes for setup** | First-time installation only |
+
+Place your `.pkl` file in the `models/` subfolder and adjust the path in `start_ausstellung.bat`. That's it.
+
+> **Don't have a checkpoint yet?**  
+> Pre-trained models are available at [NVIDIA's model repository](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/research/models/stylegan2) and [community collections on Hugging Face](https://huggingface.co/models?search=stylegan2).
 
 ---
 
